@@ -33,7 +33,8 @@ async function startServer() {
   app.use(cookieParser());
 
   // Static uploads serving with caching
-  const uploadsPath = path.resolve(process.cwd(), 'uploads');
+  const rawUploadDir = process.env.UPLOAD_DIR || './uploads';
+  const uploadsPath = path.isAbsolute(rawUploadDir) ? rawUploadDir : path.resolve(process.cwd(), rawUploadDir);
   app.use('/uploads', express.static(uploadsPath, { maxAge: '7d' }));
 
   // Global authentication middleware (populates req.user if session valid)

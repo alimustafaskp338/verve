@@ -18,9 +18,11 @@ export const MailboxViewer: React.FC<MailboxViewerProps> = ({
   const [selectedEmail, setSelectedEmail] = useState<SentEmail | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const fetchEmails = async () => {
     setLoading(true);
+    setActionError(null);
     const { data } = await apiFetch('/api/dev/emails');
     if (data?.emails) {
       setEmails(data.emails);
@@ -36,6 +38,7 @@ export const MailboxViewer: React.FC<MailboxViewerProps> = ({
   }, []);
 
   const handleVerifyAccount = async (token: string) => {
+    setActionError(null);
     const { error } = await apiFetch('/api/auth/verify-email', {
       method: 'POST',
       body: JSON.stringify({ token }),
@@ -44,7 +47,7 @@ export const MailboxViewer: React.FC<MailboxViewerProps> = ({
       setActionSuccess('Email successfully verified! Account is now verified.');
       onEmailVerified();
     } else {
-      alert(error);
+      setActionError(error);
     }
   };
 
@@ -95,6 +98,12 @@ export const MailboxViewer: React.FC<MailboxViewerProps> = ({
           <div className="bg-emerald-500/20 border-b border-emerald-500/30 px-4 py-2.5 text-emerald-300 text-xs flex items-center gap-2">
             <CheckCircle className="w-4 h-4 shrink-0" />
             <span>{actionSuccess}</span>
+          </div>
+        )}
+        {actionError && (
+          <div className="bg-rose-500/20 border-b border-rose-500/30 px-4 py-2.5 text-rose-300 text-xs flex items-center gap-2">
+            <X className="w-4 h-4 shrink-0" />
+            <span>{actionError}</span>
           </div>
         )}
 
@@ -165,7 +174,7 @@ export const MailboxViewer: React.FC<MailboxViewerProps> = ({
                       </p>
                     </div>
 
-                    {selectedEmail.purpose === 'email_verification' ? (
+                    {selectedEmail.purpose === 'verification' || selectedEmail.purpose === 'email_verification' ? (
                       <button
                         onClick={() => handleVerifyAccount(selectedEmail.token)}
                         className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white flex items-center gap-1.5 transition-colors shrink-0 shadow-lg shadow-emerald-600/20"

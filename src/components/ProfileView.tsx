@@ -42,6 +42,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [isSelf, setIsSelf] = useState(false);
   const [loading, setLoading] = useState(true);
   const [followLoading, setFollowLoading] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
   const [pendingRequests, setPendingRequests] = useState<any[]>([]);
 
   // Modals for followers / following
@@ -131,8 +132,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     });
     if (data?.avatarUrl && profile) {
       setProfile({ ...profile, avatarUrl: data.avatarUrl });
+      setProfileError(null);
     } else if (error) {
-      alert(error);
+      setProfileError(error);
     }
   };
 
@@ -183,6 +185,12 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
   return (
     <div className="w-full max-w-4xl mx-auto pb-24 pt-4 px-3 sm:px-6">
+      {profileError && (
+        <div className="mb-4 p-3 rounded-xl bg-rose-500/20 border border-rose-500/30 text-rose-300 text-xs flex items-center justify-between">
+          <span>{profileError}</span>
+          <button onClick={() => setProfileError(null)} className="text-slate-400 hover:text-white">×</button>
+        </div>
+      )}
       {/* PENDING REQUESTS BANNER (IF PRIVATE ACCOUNT OWNER) */}
       {isSelf && pendingRequests.length > 0 && (
         <div className="mb-6 p-4 rounded-2xl bg-sky-500/10 border border-sky-500/20 text-white">

@@ -7,10 +7,26 @@ if (!fs.existsSync(dbDir)) {
   fs.mkdirSync(dbDir, { recursive: true });
 }
 
-const dbUrl = process.env.DATABASE_URL || 'file:data/verve.db';
+function resolveDatabaseUrl(): string {
+  const candidate = process.env.LIBSQL_URL || process.env.TURSO_DATABASE_URL || process.env.DATABASE_URL;
+  if (candidate) {
+    const supportedPrefixes = ['libsql:', 'wss:', 'ws:', 'https:', 'http:', 'file:'];
+    const isSupported = supportedPrefixes.some((prefix) => candidate.startsWith(prefix));
+    if (isSupported) {
+      return candidate;
+    }
+    console.warn(
+      `[DATABASE] Unsupported scheme in DATABASE_URL ("${candidate.split(':')[0]}:"). LibSQL requires libsql:, wss:, ws:, https:, http:, or file: URLs. Falling back to local database: file:data/verve.db`
+    );
+  }
+  return 'file:data/verve.db';
+}
+
+const dbUrl = resolveDatabaseUrl();
 
 export const db: Client = createClient({
   url: dbUrl,
+  authToken: process.env.LIBSQL_AUTH_TOKEN || process.env.TURSO_AUTH_TOKEN,
 });
 
 export async function initDatabase(): Promise<void> {

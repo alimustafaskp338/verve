@@ -40,6 +40,8 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
 
   const [comments, setComments] = useState<Comment[]>([]);
   const [commentText, setCommentText] = useState('');
+  const [commentError, setCommentError] = useState<string | null>(null);
+  const [copiedLink, setCopiedLink] = useState(false);
   const [submittingComment, setSubmittingComment] = useState(false);
   const [editingCaption, setEditingCaption] = useState(false);
   const [captionValue, setCaptionValue] = useState(post.caption);
@@ -68,6 +70,7 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
     if (!commentText.trim() || !currentUser) return;
 
     setSubmittingComment(true);
+    setCommentError(null);
     const { data, error } = await apiFetch(`/api/engagement/comments/${post.id}`, {
       method: 'POST',
       body: JSON.stringify({ content: commentText.trim() }),
@@ -79,12 +82,13 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
       setCommentText('');
       post.commentsCount += 1;
     } else if (error) {
-      alert(error);
+      setCommentError(error);
     }
   };
 
   const handleDeleteComment = async (commentId: string) => {
-    if (!confirm('Are you sure you want to delete this comment?')) return;
+    const confirmed = window.confirm ? window.confirm('Are you sure you want to delete this comment?') : true;
+    if (!confirmed) return;
     const { error } = await apiFetch(`/api/engagement/comments/${commentId}`, {
       method: 'DELETE',
     });
@@ -321,12 +325,21 @@ export const PostDetailModal: React.FC<PostDetailModalProps> = ({
                 </button>
                 <button
                   onClick={() => {
-                    navigator.clipboard.writeText(`${window.location.origin}/post/${post.id}`);
-                    alert('Post link copied!');
+                    if (navigator.clipboard) {
+                      navigator.clipboard.writeText(`${window.location.origin}/post/${post.id}`);
+                    }
+                    setCopiedLink(true);
+                    setTimeout(() => setCopiedLink(false), 2000);
                   }}
-                  className="p-1.5 text-slate-300 hover:text-white"
+                  className="p-1.5 text-slate-300 hover:text-white relative"
+                  title="Share post"
                 >
                   <Share2 className="w-5 h-5" />
+                  {copiedLink && (
+                    <span className="absolute -top-7 left-1/2 -translate-x-1/2 px-2 py-0.5 bg-sky-500 text-white text-[10px] rounded font-bold whitespace-nowrap shadow">
+                      Link Copied!
+                    </span>
+                  )}
                 </button>
               </div>
 

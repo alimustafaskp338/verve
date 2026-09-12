@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { X, LogIn, UserPlus, KeyRound, Mail, AlertCircle, CheckCircle, Sparkles } from 'lucide-react';
 import { User } from '../types';
-import { apiFetch } from '../api';
+import { apiFetch, setAuthToken } from '../api';
 
 interface AuthModalProps {
   initialMode?: 'login' | 'signup' | 'forgot';
@@ -47,6 +47,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
     setLoading(false);
     if (data?.user) {
+      if (data.token) {
+        setAuthToken(data.token);
+      }
       onAuthSuccess(data.user);
       onClose();
     } else {
@@ -76,9 +79,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
     setLoading(false);
     if (data?.user) {
+      if (data.token) {
+        setAuthToken(data.token);
+      }
       onAuthSuccess(data.user);
-      setSuccessNotice('Account created! A verification email has been sent to your outbox.');
-      setTimeout(onClose, 2500);
+
+      if (data.emailDelivery?.isSmtp) {
+        setSuccessNotice(
+          `Account created! A confirmation email has been dispatched directly to your Gmail (${data.emailDelivery.recipient}). Please check your inbox or spam folder.`
+        );
+      } else {
+        setSuccessNotice(
+          `Account created! Email verification link generated. You can click "Open Dev Outbox" below to verify immediately.`
+        );
+      }
+      setTimeout(onClose, 3500);
     } else {
       setError(apiError || 'Failed to create account.');
     }

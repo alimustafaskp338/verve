@@ -1,10 +1,11 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import crypto from 'crypto';
 import { db } from '../db';
 import {
   hashPassword,
   verifyPassword,
+  generateJwtToken,
   createSession,
   destroySession,
   destroyAllUserSessions,
@@ -19,9 +20,110 @@ import { sendTransactionalEmail } from '../email';
 
 export const authRouter = Router();
 
+/**
+ * Validates whether an email address is strictly valid, well-formed,
+ * free of typos, and conforms to domain/Gmail conventions.
+ */
+export function validateEmailAddress(rawEmail: string): { isValid: boolean; error?: string; normalizedEmail: string } {
+  if (!rawEmail || typeof rawEmail !== 'string') {
+    return { isValid: false, error: 'Email address is required.', normalizedEmail: '' };
+  }
+
+  const normalized = rawEmail.trim().toLowerCase();
+
+  if (normalized.length < 5) {
+    return { isValid: false, error: 'Email address is too short (min 5 characters).', normalizedEmail: normalized };
+  }
+  if (normalized.length > 254) {
+    return { isValid: false, error: 'Email address exceeds maximum length of 254 characters.', normalizedEmail: normalized };
+  }
+
+  // Check for exactly one '@'
+  const parts = normalized.split('@');
+  if (parts.length !== 2) {
+    return { isValid: false, error: 'Email must contain exactly one "@" symbol.', normalizedEmail: normalized };
+  }
+
+  const [localPart, domainPart] = parts;
+
+  if (!localPart || localPart.length > 64) {
+    return { isValid: false, error: 'The email username part must be between 1 and 64 characters.', normalizedEmail: normalized };
+  }
+
+  if (!domainPart || domainPart.length < 3) {
+    return { isValid: false, error: 'The email domain is invalid or missing.', normalizedEmail: normalized };
+  }
+
+  // Domain syntax checks
+  if (domainPart.startsWith('.') || domainPart.endsWith('.') || domainPart.startsWith('-') || domainPart.endsWith('-')) {
+    return { isValid: false, error: 'The email domain contains invalid leading or trailing punctuation.', normalizedEmail: normalized };
+  }
+
+  if (domainPart.includes('..')) {
+    return { isValid: false, error: 'The email domain cannot contain consecutive dots.', normalizedEmail: normalized };
+  }
+
+  const domainSubparts = domainPart.split('.');
+  if (domainSubparts.length < 2) {
+    return { isValid: false, error: 'The email domain must include a top-level domain (e.g. .com, .org, .net).', normalizedEmail: normalized };
+  }
+
+  const tld = domainSubparts[domainSubparts.length - 1];
+  if (!tld || tld.length < 2 || !/^[a-z]+$/.test(tld)) {
+    return { isValid: false, error: 'The email top-level domain (TLD) must have at least 2 letters (e.g. .com).', normalizedEmail: normalized };
+  }
+
+  // General email standard regex check
+  const standardEmailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
+  if (!standardEmailRegex.test(normalized)) {
+    return { isValid: false, error: 'Please enter a valid, well-formed email address.', normalizedEmail: normalized };
+  }
+
+  // Typo detection for common domains
+  const typoMap: Record<string, string> = {
+    'gmai.com': 'gmail.com',
+    'gamil.com': 'gmail.com',
+    'gmial.com': 'gmail.com',
+    'gmaill.com': 'gmail.com',
+    'gmal.com': 'gmail.com',
+    'yaho.com': 'yahoo.com',
+    'yahooo.com': 'yahoo.com',
+    'hotmial.com': 'hotmail.com',
+    'outlok.com': 'outlook.com',
+  };
+  if (typoMap[domainPart]) {
+    return {
+      isValid: false,
+      error: `Did you mean ${localPart}@${typoMap[domainPart]}? Please double check your email domain.`,
+      normalizedEmail: normalized,
+    };
+  }
+
+  // Gmail-specific syntax requirements
+  if (domainPart === 'gmail.com' || domainPart === 'googlemail.com') {
+    if (localPart.length < 6) {
+      return { isValid: false, error: 'Gmail addresses require a username of at least 6 characters.', normalizedEmail: normalized };
+    }
+    if (localPart.length > 30) {
+      return { isValid: false, error: 'Gmail addresses allow a username of at most 30 characters.', normalizedEmail: normalized };
+    }
+    if (!/^[a-z0-9.]+$/.test(localPart)) {
+      return { isValid: false, error: 'Gmail usernames may only contain letters (a-z), numbers (0-9), and periods (.).', normalizedEmail: normalized };
+    }
+    if (localPart.includes('..')) {
+      return { isValid: false, error: 'Gmail usernames cannot contain consecutive periods (..).', normalizedEmail: normalized };
+    }
+    if (localPart.startsWith('.') || localPart.endsWith('.')) {
+      return { isValid: false, error: 'Gmail usernames cannot start or end with a period.', normalizedEmail: normalized };
+    }
+  }
+
+  return { isValid: true, normalizedEmail: normalized };
+}
+
 // Validation schemas
 const signupSchema = z.object({
-  email: z.string().email('Invalid email address').max(255).toLowerCase().trim(),
+  email: z.string().max(255).toLowerCase().trim(),
   username: z
     .string()
     .min(3, 'Username must be at least 3 characters')
@@ -39,12 +141,19 @@ const loginSchema = z.object({
 });
 
 const forgotPasswordSchema = z.object({
-  email: z.string().email('Invalid email address').toLowerCase().trim(),
+  email: z.string().max(255).toLowerCase().trim(),
 });
 
 const resetPasswordSchema = z.object({
   token: z.string().min(10, 'Invalid token'),
   newPassword: z.string().min(8, 'Password must be at least 8 characters').max(100),
+});
+
+// REAL-TIME EMAIL VALIDATION ENDPOINT
+authRouter.post('/validate-email', (req: Request, res: Response) => {
+  const email = req.body?.email || '';
+  const result = validateEmailAddress(email);
+  return res.json(result);
 });
 
 // SIGNUP
@@ -62,7 +171,17 @@ authRouter.post(
         });
       }
 
-      const { email, username, displayName, password } = parsed.data;
+      const { email: rawEmail, username, displayName, password } = parsed.data;
+
+      // Validate email validity and domain
+      const emailValidation = validateEmailAddress(rawEmail);
+      if (!emailValidation.isValid) {
+        return res.status(400).json({
+          error: 'InvalidEmail',
+          message: emailValidation.error || 'The email address is invalid.',
+        });
+      }
+      const email = emailValidation.normalizedEmail;
 
       // Check duplicate email or username
       const existing = await db.execute({
@@ -108,8 +227,8 @@ authRouter.post(
       const origin = req.headers.origin || process.env.APP_URL || `http://${req.headers.host || 'localhost:3000'}`;
       const actionUrl = `${origin}/verify-email?token=${rawVerifToken}`;
 
-      // Send verification email
-      await sendTransactionalEmail({
+      // Send verification email (via Gmail SMTP if configured, or in-app Dev Outbox)
+      const emailResult = await sendTransactionalEmail({
         to: email,
         subject: 'Verify your email on Verve',
         purpose: 'verification',
@@ -118,12 +237,24 @@ authRouter.post(
         userName: displayName,
       });
 
-      // Automatically create active session and set cookie
+      // Generate signed JWT token
+      const jwtToken = generateJwtToken({
+        userId,
+        email,
+        username,
+        role: 'user',
+      });
+
+      // Also create persistent session & set HTTP-only cookie
       const sessionToken = await createSession(userId, req);
-      setSessionCookie(res, sessionToken);
+      setSessionCookie(res, jwtToken || sessionToken);
+
+      const message = emailResult.mode === 'smtp'
+        ? `Account created successfully! We sent a verification email to ${email}.`
+        : `Account created successfully! A verification email has been generated.`;
 
       return res.status(201).json({
-        message: 'Account created successfully. Please check your email for the verification link.',
+        message,
         user: {
           id: userId,
           email,
@@ -136,7 +267,13 @@ authRouter.post(
           isVerified: false,
           role: 'user',
         },
-        sessionToken,
+        token: jwtToken,
+        sessionToken: jwtToken,
+        emailDelivery: {
+          mode: emailResult.mode,
+          recipient: email,
+          isSmtp: emailResult.mode === 'smtp',
+        },
       });
     } catch (err: any) {
       console.error('[SIGNUP ERROR]', err);
@@ -186,9 +323,17 @@ authRouter.post(
         return res.status(401).json({ error: 'InvalidCredentials', message: 'Invalid email/username or password.' });
       }
 
-      // Create session
+      // Generate signed JWT token
+      const jwtToken = generateJwtToken({
+        userId: userRow.id as string,
+        email: userRow.email as string,
+        username: userRow.username as string,
+        role: (userRow.role as string) || 'user',
+      });
+
+      // Create session and set cookie
       const sessionToken = await createSession(userRow.id as string, req);
-      setSessionCookie(res, sessionToken);
+      setSessionCookie(res, jwtToken || sessionToken);
 
       return res.json({
         message: 'Logged in successfully.',
@@ -204,7 +349,8 @@ authRouter.post(
           isVerified: Boolean(userRow.is_verified),
           role: userRow.role || 'user',
         },
-        sessionToken,
+        token: jwtToken,
+        sessionToken: jwtToken,
       });
     } catch (err: any) {
       console.error('[LOGIN ERROR]', err);
@@ -303,14 +449,15 @@ authRouter.post('/verify-email', async (req: Request, res: Response) => {
 // RESEND VERIFICATION EMAIL
 authRouter.post(
   '/resend-verification',
-  rateLimiter('resend-verif', 3, 60 * 1000), // 3 per minute
   requireAuth,
+  async (req: Request, res: Response, next: NextFunction) => {
+    if (req.user?.is_verified) {
+      return res.status(400).json({ error: 'AlreadyVerified', message: 'Your email address is already verified.' });
+    }
+    return rateLimiter('resend-verif', 3, 60 * 1000)(req, res, next);
+  },
   async (req: Request, res: Response) => {
     try {
-      if (req.user!.is_verified) {
-        return res.status(400).json({ message: 'Your email address is already verified.' });
-      }
-
       // Invalidate old tokens
       await db.execute({
         sql: `DELETE FROM email_verifications WHERE user_id = ?`,

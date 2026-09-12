@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
 import { db } from './db';
 
 export interface AuthUser {
@@ -17,6 +18,15 @@ export interface AuthUser {
   created_at: string;
 }
 
+export interface JwtPayload {
+  userId: string;
+  email: string;
+  username: string;
+  role?: string;
+  iat?: number;
+  exp?: number;
+}
+
 declare global {
   namespace Express {
     interface Request {
@@ -28,6 +38,56 @@ declare global {
 
 export const SESSION_COOKIE_NAME = 'verve_session';
 export const SESSION_DURATION_MS = 1000 * 60 * 60 * 24 * 14; // 14 days
+
+// SESSION_SECRET validation & startup check
+export function getSessionSecret(): string {
+  const secret = process.env.SESSION_SECRET;
+  if (process.env.NODE_ENV === 'production') {
+    if (!secret || secret.trim().length < 16) {
+      throw new Error(
+        '[FATAL CONFIG] SESSION_SECRET is required in production and must be at least 16 characters. Please set SESSION_SECRET.'
+      );
+    }
+    return secret.trim();
+  }
+  return secret || 'dev-insecure-session-secret-change-in-production';
+}
+
+// Ensure early check
+getSessionSecret();
+
+/**
+ * Generate a signed JSON Web Token (JWT) for the authenticated user.
+ */
+export function generateJwtToken(payload: { userId: string; email: string; username: string; role?: string }): string {
+  const secret = getSessionSecret();
+  return jwt.sign(
+    {
+      userId: payload.userId,
+      email: payload.email,
+      username: payload.username,
+      role: payload.role || 'user',
+    },
+    secret,
+    {
+      expiresIn: '14d',
+      algorithm: 'HS256',
+    }
+  );
+}
+
+/**
+ * Verify and decode a JWT token string. Returns decoded payload or null if invalid/expired.
+ */
+export function verifyJwtToken(token: string): JwtPayload | null {
+  try {
+    const secret = getSessionSecret();
+    const decoded = jwt.verify(token, secret, { algorithms: ['HS256'] }) as JwtPayload;
+    return decoded;
+  } catch {
+    return null;
+  }
+}
 
 export async function hashPassword(password: string): Promise<string> {
   const salt = await bcrypt.genSalt(10);
@@ -149,21 +209,55 @@ export function rateLimiter(prefix: string, maxCount: number, windowMs: number) 
   };
 }
 
-// Session authentication middleware
+// Authentication middleware (supports both JWT Bearer tokens and HTTP-only session cookies)
 export async function authenticate(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     let token = req.cookies?.[SESSION_COOKIE_NAME];
     
-    // Also check Bearer authorization header if provided
+    // Check Bearer authorization header if provided (RFC 6750)
     const authHeader = req.headers['authorization'];
-    if (!token && authHeader && authHeader.startsWith('Bearer ')) {
-      token = authHeader.substring(7);
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      token = authHeader.substring(7).trim();
     }
 
     if (!token) {
       return next();
     }
 
+    // 1. Check if token is a valid signed JWT
+    const jwtPayload = verifyJwtToken(token);
+    if (jwtPayload && jwtPayload.userId) {
+      const userRes = await db.execute({
+        sql: `
+          SELECT id, email, username, display_name, avatar_url, bio, website,
+                 is_private, is_verified, role, created_at, deactivated_at
+          FROM users
+          WHERE id = ? AND deactivated_at IS NULL
+        `,
+        args: [jwtPayload.userId],
+      });
+
+      if (userRes.rows.length > 0) {
+        const row = userRes.rows[0];
+        req.user = {
+          id: row.id as string,
+          email: row.email as string,
+          username: row.username as string,
+          display_name: row.display_name as string,
+          avatar_url: (row.avatar_url as string) || '',
+          bio: (row.bio as string) || '',
+          website: (row.website as string) || '',
+          is_private: Number(row.is_private) || 0,
+          is_verified: Number(row.is_verified) || 0,
+          role: (row.role as string) || 'user',
+          created_at: row.created_at as string,
+        };
+        req.sessionToken = token;
+        return next();
+      }
+    }
+
+    // 2. Fallback to opaque session token lookup in sessions table
     const tokenHash = hashToken(token);
     const now = new Date().toISOString();
 
@@ -210,6 +304,9 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
   }
   next();
 }
+
+// Alias for standard JWT protected route naming
+export const protectRoute = requireAuth;
 
 export function requireVerified(req: Request, res: Response, next: NextFunction) {
   if (!req.user) {

@@ -37,6 +37,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [isPrivate, setIsPrivate] = useState(currentUser.isPrivate || false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileSuccess, setProfileSuccess] = useState<string | null>(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
 
   // Change password state
   const [oldPassword, setOldPassword] = useState('');
@@ -86,8 +87,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     if (data?.user) {
       onProfileUpdated(data.user);
       setProfileSuccess('Profile updated successfully.');
+      setProfileError(null);
     } else {
-      alert(error || 'Failed to update profile.');
+      setProfileError(error || 'Failed to update profile.');
+      setProfileSuccess(null);
     }
   };
 
@@ -223,6 +226,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs rounded-xl flex items-center gap-2">
                   <CheckCircle className="w-4 h-4 shrink-0" />
                   <span>{profileSuccess}</span>
+                </div>
+              )}
+              {profileError && (
+                <div className="p-3 bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs rounded-xl flex items-center gap-2">
+                  <X className="w-4 h-4 shrink-0" />
+                  <span>{profileError}</span>
                 </div>
               )}
 

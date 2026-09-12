@@ -5,9 +5,16 @@ import crypto from 'crypto';
 import sizeOf from 'image-size';
 import { Request } from 'express';
 
-const UPLOAD_DIR = path.resolve(process.cwd(), 'uploads');
+const rawUploadDir = process.env.UPLOAD_DIR || './uploads';
+const UPLOAD_DIR = path.isAbsolute(rawUploadDir) ? rawUploadDir : path.resolve(process.cwd(), rawUploadDir);
 if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+}
+
+// STORAGE_DRIVER validation (supports 'local' file storage by default)
+const STORAGE_DRIVER = process.env.STORAGE_DRIVER || 'local';
+if (STORAGE_DRIVER !== 'local') {
+  console.info(`[STORAGE] Configured STORAGE_DRIVER is "${STORAGE_DRIVER}". Using local filesystem adapter for media uploads at: ${UPLOAD_DIR}`);
 }
 
 // Allowed MIME types and extensions

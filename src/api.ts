@@ -1,3 +1,34 @@
+const TOKEN_STORAGE_KEY = 'verve_jwt_token';
+
+let memoryToken: string | null = null;
+
+export function getAuthToken(): string | null {
+  if (memoryToken) return memoryToken;
+  try {
+    const saved = localStorage.getItem(TOKEN_STORAGE_KEY);
+    if (saved) {
+      memoryToken = saved;
+      return saved;
+    }
+  } catch {
+    // localStorage may be disabled or blocked
+  }
+  return null;
+}
+
+export function setAuthToken(token: string | null): void {
+  memoryToken = token;
+  try {
+    if (token) {
+      localStorage.setItem(TOKEN_STORAGE_KEY, token);
+    } else {
+      localStorage.removeItem(TOKEN_STORAGE_KEY);
+    }
+  } catch {
+    // ignore storage errors
+  }
+}
+
 export async function apiFetch<T = any>(
   endpoint: string,
   options: RequestInit = {}
@@ -9,6 +40,12 @@ export async function apiFetch<T = any>(
 
     if (!(options.body instanceof FormData) && !headers['Content-Type']) {
       headers['Content-Type'] = 'application/json';
+    }
+
+    // Attach JWT Authorization header if available
+    const token = getAuthToken();
+    if (token && !headers['Authorization']) {
+      headers['Authorization'] = `Bearer ${token}`;
     }
 
     const res = await fetch(endpoint, {

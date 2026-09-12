@@ -30,6 +30,7 @@ export const DirectMessages: React.FC<DirectMessagesProps> = ({
   const [messageText, setMessageText] = useState('');
   const [loadingConv, setLoadingConv] = useState(true);
   const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
 
   // New Chat Search Modal
   const [showNewChatModal, setShowNewChatModal] = useState(false);
@@ -151,9 +152,10 @@ export const DirectMessages: React.FC<DirectMessagesProps> = ({
       }
       activeConv.lastMessage = content;
       activeConv.lastMessageAt = data.message.createdAt;
+      setSendError(null);
       loadConversations();
     } else if (error) {
-      alert(error);
+      setSendError(error);
     }
   };
 
@@ -325,6 +327,12 @@ export const DirectMessages: React.FC<DirectMessagesProps> = ({
             </div>
 
             {/* MESSAGE COMPOSER */}
+            {sendError && (
+              <div className="px-3 py-1.5 bg-rose-500/20 text-rose-300 text-xs border-t border-rose-500/30 flex items-center justify-between">
+                <span>{sendError}</span>
+                <button onClick={() => setSendError(null)} className="text-slate-400 hover:text-white ml-2">×</button>
+              </div>
+            )}
             <form
               onSubmit={handleSendMessage}
               className="p-3 border-t border-[#1e293b] flex items-center gap-2 bg-[#0e131d]"

@@ -1,0 +1,6 @@
+{
+  "name": "Verve - Visual Social Platform",
+  "description": "A production-grade, full-stack visual social network featuring posts, feeds, explore, direct messaging, social graph, notifications, and secure authentication.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

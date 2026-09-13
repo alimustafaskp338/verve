@@ -156,6 +156,39 @@ authRouter.post('/validate-email', (req: Request, res: Response) => {
   return res.json(result);
 });
 
+// REAL-TIME USERNAME AVAILABILITY CHECK ENDPOINT
+authRouter.get('/check-username', async (req: Request, res: Response) => {
+  try {
+    const rawUsername = String(req.query.username || '').toLowerCase().trim();
+    if (!rawUsername) {
+      return res.json({ available: false, error: 'Username is required.' });
+    }
+    if (rawUsername.length < 3) {
+      return res.json({ available: false, error: 'Username must be at least 3 characters.' });
+    }
+    if (rawUsername.length > 30) {
+      return res.json({ available: false, error: 'Username must be at most 30 characters.' });
+    }
+    if (!/^[a-z0-9_]+$/.test(rawUsername)) {
+      return res.json({ available: false, error: 'Username can only contain letters, numbers, and underscores.' });
+    }
+
+    const existing = await db.execute({
+      sql: 'SELECT id FROM users WHERE username = ?',
+      args: [rawUsername],
+    });
+
+    const isAvailable = existing.rows.length === 0;
+    return res.json({
+      available: isAvailable,
+      username: rawUsername,
+      message: isAvailable ? 'Username is available' : 'Username is already taken',
+    });
+  } catch (err: any) {
+    return res.status(500).json({ available: false, error: 'Failed to verify username availability.' });
+  }
+});
+
 // SIGNUP
 authRouter.post(
   '/signup',
@@ -361,9 +394,19 @@ authRouter.post(
 
 // LOGOUT
 authRouter.post('/logout', async (req: Request, res: Response) => {
-  if (req.sessionToken) {
+  let token = req.cookies?.['verve_session'];
+  const authHeader = req.headers['authorization'];
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.substring(7).trim();
+  }
+
+  if (token) {
+    await destroySession(token);
+  }
+  if (req.sessionToken && req.sessionToken !== token) {
     await destroySession(req.sessionToken);
   }
+
   clearSessionCookie(res);
   return res.json({ message: 'Logged out successfully.' });
 });

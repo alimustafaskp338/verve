@@ -29,6 +29,20 @@ export function setAuthToken(token: string | null): void {
   }
 }
 
+export async function logoutSession(): Promise<void> {
+  try {
+    await fetch('/api/auth/logout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+    });
+  } catch (err) {
+    console.error('Logout error:', err);
+  } finally {
+    setAuthToken(null);
+  }
+}
+
 export async function apiFetch<T = any>(
   endpoint: string,
   options: RequestInit = {}
@@ -57,6 +71,11 @@ export async function apiFetch<T = any>(
     const status = res.status;
     let data = null;
     let error = null;
+
+    // If unauthorized with a token, purge stale token
+    if (status === 401 && token && !endpoint.includes('/api/auth/login')) {
+      setAuthToken(null);
+    }
 
     const contentType = res.headers.get('content-type');
     if (contentType && contentType.includes('application/json')) {

@@ -9,6 +9,7 @@ import {
   Globe,
   AlertTriangle,
   CheckCircle,
+  LogOut,
 } from 'lucide-react';
 import { User, UserSummary } from '../types';
 import { apiFetch } from '../api';
@@ -18,6 +19,7 @@ interface SettingsModalProps {
   onClose: () => void;
   onProfileUpdated: (updatedUser: Partial<User>) => void;
   onAccountDeleted: () => void;
+  onLogout?: () => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -25,6 +27,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onClose,
   onProfileUpdated,
   onAccountDeleted,
+  onLogout,
 }) => {
   if (!currentUser) return null;
 
@@ -207,6 +210,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <Trash2 className="w-4 h-4" />
             <span>Danger Zone</span>
           </button>
+
+          {onLogout && (
+            <div className="pt-4 mt-auto border-t border-slate-850">
+              <button
+                id="settings-modal-logout-btn"
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onLogout();
+                }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 transition-colors"
+              >
+                <LogOut className="w-4 h-4" />
+                <span>Sign Out of Verve</span>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* CONTENT AREA */}

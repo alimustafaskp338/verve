@@ -12,7 +12,7 @@ import { MailboxViewer } from './components/MailboxViewer';
 import { ReportModal } from './components/ReportModal';
 import { AuthModal } from './components/AuthModal';
 import { User, Post } from './types';
-import { apiFetch } from './api';
+import { apiFetch, logoutSession } from './api';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -194,7 +194,7 @@ export default function App() {
   };
 
   const handleLogout = async () => {
-    await apiFetch('/api/auth/logout', { method: 'POST' });
+    await logoutSession();
     setCurrentUser(null);
     setCurrentTab('explore');
     loadFeed();
@@ -385,6 +385,7 @@ export default function App() {
             setCurrentTab('explore');
             loadFeed();
           }}
+          onLogout={handleLogout}
         />
       )}
 
@@ -410,6 +411,41 @@ export default function App() {
           targetType={reportModalData.targetType}
           onClose={() => setReportModalData(null)}
         />
+      )}
+
+      {/* GUEST BOTTOM DOCK (INSTAGRAM STYLE) */}
+      {!currentUser && !authChecking && (
+        <aside
+          id="guest-bottom-dock"
+          aria-label="Guest sign in prompt"
+          className="fixed bottom-0 inset-x-0 bg-slate-950/95 border-t border-slate-800 p-3 sm:px-8 z-30 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-2xl backdrop-blur-md"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-amber-400 via-rose-500 to-indigo-600 flex items-center justify-center text-white font-bold text-sm shadow-md">
+              V
+            </div>
+            <div>
+              <p className="text-xs sm:text-sm font-bold text-white">Experience Verve like Instagram</p>
+              <p className="text-[11px] text-slate-400">Log in to like posts, comment, follow creators, and share moments.</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2.5 w-full sm:w-auto">
+            <button
+              id="guest-dock-login-btn"
+              onClick={() => setIsAuthModalOpen(true)}
+              className="flex-1 sm:flex-initial px-4 py-1.5 rounded-lg text-xs font-semibold bg-[#0095f6] hover:bg-[#1877f2] text-white transition-colors shadow"
+            >
+              Log In
+            </button>
+            <button
+              id="guest-dock-signup-btn"
+              onClick={() => setIsAuthModalOpen(true)}
+              className="flex-1 sm:flex-initial px-4 py-1.5 rounded-lg text-xs font-semibold border border-slate-600 hover:border-slate-400 text-slate-200 hover:text-white transition-colors"
+            >
+              Sign Up
+            </button>
+          </div>
+        </aside>
       )}
     </div>
   );

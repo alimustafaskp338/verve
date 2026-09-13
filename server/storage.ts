@@ -5,10 +5,25 @@ import crypto from 'crypto';
 import sizeOf from 'image-size';
 import { Request } from 'express';
 
-const rawUploadDir = process.env.UPLOAD_DIR || './uploads';
-const UPLOAD_DIR = path.isAbsolute(rawUploadDir) ? rawUploadDir : path.resolve(process.cwd(), rawUploadDir);
-if (!fs.existsSync(UPLOAD_DIR)) {
-  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+const isServerlessEnv = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+const defaultUploadDir = isServerlessEnv ? '/tmp/uploads' : './uploads';
+const rawUploadDir = process.env.UPLOAD_DIR || defaultUploadDir;
+let UPLOAD_DIR = path.isAbsolute(rawUploadDir) ? rawUploadDir : path.resolve(process.cwd(), rawUploadDir);
+
+try {
+  if (!fs.existsSync(UPLOAD_DIR)) {
+    fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+  }
+} catch {
+  // If filesystem is read-only, fallback to /tmp/uploads
+  UPLOAD_DIR = '/tmp/uploads';
+  try {
+    if (!fs.existsSync(UPLOAD_DIR)) {
+      fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+    }
+  } catch {
+    // Ignore if directory creation fails in restricted environment
+  }
 }
 
 // STORAGE_DRIVER validation (supports 'local' file storage by default)

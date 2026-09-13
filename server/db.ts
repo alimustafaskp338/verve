@@ -2,10 +2,7 @@ import { createClient, Client } from '@libsql/client';
 import fs from 'fs';
 import path from 'path';
 
-const dbDir = path.resolve(process.cwd(), 'data');
-if (!fs.existsSync(dbDir)) {
-  fs.mkdirSync(dbDir, { recursive: true });
-}
+const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
 
 function resolveDatabaseUrl(): string {
   const candidate = process.env.LIBSQL_URL || process.env.TURSO_DATABASE_URL || process.env.DATABASE_URL;
@@ -16,10 +13,25 @@ function resolveDatabaseUrl(): string {
       return candidate;
     }
     console.warn(
-      `[DATABASE] Unsupported scheme in DATABASE_URL ("${candidate.split(':')[0]}:"). LibSQL requires libsql:, wss:, ws:, https:, http:, or file: URLs. Falling back to local database: file:data/verve.db`
+      `[DATABASE] Unsupported scheme in DATABASE_URL ("${candidate.split(':')[0]}:"). LibSQL requires libsql:, wss:, ws:, https:, http:, or file: URLs.`
     );
   }
-  return 'file:data/verve.db';
+
+  // If deployed in a serverless read-only environment like Vercel, store SQLite in /tmp
+  if (isServerless) {
+    return 'file:/tmp/verve.db';
+  }
+
+  // Local persistent environment
+  try {
+    const dbDir = path.resolve(process.cwd(), 'data');
+    if (!fs.existsSync(dbDir)) {
+      fs.mkdirSync(dbDir, { recursive: true });
+    }
+    return 'file:data/verve.db';
+  } catch {
+    return 'file:/tmp/verve.db';
+  }
 }
 
 const dbUrl = resolveDatabaseUrl();
@@ -69,6 +81,14 @@ export async function initDatabase(): Promise<void> {
     );
   `);
   await db.execute(`CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);`);
+
+  // Revoked tokens table (blacklists logged out JWTs or tokens)
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS revoked_tokens (
+      token_hash TEXT PRIMARY KEY,
+      revoked_at TEXT DEFAULT (datetime('now'))
+    );
+  `);
 
   // Email verification tokens
   await db.execute(`
